@@ -1,6 +1,5 @@
 import os
 import base64
-import re
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from html.parser import HTMLParser
@@ -14,12 +13,23 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
 class _HTMLText(HTMLParser):
+    """Turns HTML into plain text, ignoring <style>, <script> and <head> contents."""
+
     def __init__(self):
         super().__init__()
         self.parts = []
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("style", "script", "head"):
+            self._skip += 1
+
+    def handle_endtag(self, tag):
+        if tag in ("style", "script", "head") and self._skip:
+            self._skip -= 1
 
     def handle_data(self, data):
-        if data.strip():
+        if not self._skip and data.strip():
             self.parts.append(data.strip())
 
 
@@ -33,6 +43,7 @@ def _decode_body(data):
 
 def _collect_bodies(payload):
     plain, html = [], []
+
     def walk(part):
         mime = part.get("mimeType", "")
         data = part.get("body", {}).get("data")
@@ -44,6 +55,7 @@ def _collect_bodies(payload):
                 html.append(decoded)
         for child in part.get("parts", []) or []:
             walk(child)
+
     walk(payload or {})
     if plain:
         return "\n\n".join(plain)
@@ -52,6 +64,7 @@ def _collect_bodies(payload):
         parser.feed("\n".join(html))
         return "\n".join(parser.parts)
     return "(This email has no readable text body.)"
+
 
 def gmail_client():
     required = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"]
@@ -75,6 +88,8 @@ def search_latest_service_email(service_name: str, requested_address: str):
     domains = SERVICE_DOMAINS[service_name]
     sender_query = " OR ".join(f"from:{domain}" for domain in domains)
     query = f"to:{requested_address} ({sender_query})"
+    # Optional: only look at recent mail so an old code is never returned.
+    # query += " newer_than:1d"
     client = gmail_client()
     try:
         result = client.users().messages().list(
@@ -95,14 +110,14 @@ def search_latest_service_email(service_name: str, requested_address: str):
         internal_ms = int(msg.get("internalDate", "0"))
         received = datetime.fromtimestamp(internal_ms / 1000, tz=timezone.utc)
         body = _collect_bodies(msg.get("payload", {}))
-        
+
         return {
             "id": msg["id"],
             "from": f"{sender_name} <{sender_email}>" if sender_name else sender_email,
             "subject": headers.get("subject", "(no subject)"),
             "date": received.strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "body": body[:2800],
-            "truncated": len(body) > 2800,
+            "body": body,
+            "truncated": False,
             "gmail_url": f"https://mail.google.com/mail/u/0/#all/{msg['id']}",
         }
     except HttpError as exc:
