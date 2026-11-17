@@ -58,14 +58,15 @@ async def email_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"No matching {service} email was found for {address} in the connected Gmail inbox."
             )
         else:
-            body = result.get("body") or "(No readable message text.)"
-            if result.get("truncated"):
-                body += "\n\n[Message shortened.]"
+            # Keep the notification limited to metadata; never display authentication codes.
+            subject = re.sub(r"(?<!\d)\d{4,8}(?!\d)", "[REDACTED]", result.get("subject") or "(no subject)")
             message = (
-                f"🔐 {service} verification email received\n"
-                f"To: {address}\n\n"
-                f"{body}\n\n"
-                "Likely authentication codes are shown as [REDACTED]."
+                f"🔐 New verification email\n\n"
+                f"Service: {service}\n"
+                f"Recipient: {address}\n"
+                f"Sender: {result.get('from') or '(unknown sender)'}\n"
+                f"Subject: {subject}\n"
+                f"OTP: [REDACTED]"
             )
             await update.message.reply_text(message[:3900])
     except Exception as exc:
