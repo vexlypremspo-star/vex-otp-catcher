@@ -5,7 +5,7 @@ from config import OWNER_ID, SERVICE_DOMAINS
 from database import is_authorized, add_admin_record, remove_admin_record, get_admin_ids
 from gmail_service import search_latest_service_email
 
-EMAIL_RE = re.compile(r"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def authorized(update: Update) -> bool:
@@ -34,7 +34,7 @@ async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     service = query.data.split(":", 1)[1]
     context.user_data["selected_service"] = service
     await query.edit_message_text(
-        f"Selected: {service}\\n\\nNow send the recipient email address to search."
+        f"Selected: {service}\n\nNow send the recipient email address to search."
     )
 
 
@@ -58,15 +58,16 @@ async def email_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"No matching {service} email was found for {address} in the connected Gmail inbox."
             )
         else:
+            body = result.get("body") or "(No readable message text.)"
+            if result.get("truncated"):
+                body += "\n\n[Message shortened.]"
             message = (
-                f"📩 New matching email found\\n"
-                f"Service: {service}\\n"
-                f"To: {address}\\n"
-                f"From: {result['from']}\\n"
-                f"Subject: {result['subject']}\\n"
-                f"Received: {result['date']}"
+                f"🔐 {service} verification email received\n"
+                f"To: {address}\n\n"
+                f"{body}\n\n"
+                "Likely authentication codes are shown as [REDACTED]."
             )
-            await update.message.reply_text(message)
+            await update.message.reply_text(message[:3900])
     except Exception as exc:
         await update.message.reply_text(f"Could not search Gmail: {exc}")
     finally:
@@ -104,4 +105,4 @@ async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Only the owner can view the admin list.")
         return
     ids = get_admin_ids()
-    await update.message.reply_text("Authorized admins:\\n" + ("\\n".join(map(str, ids)) if ids else "(none)"))
+    await update.message.reply_text("Authorized admins:\n" + ("\n".join(map(str, ids)) if ids else "(none)"))
