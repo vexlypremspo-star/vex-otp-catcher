@@ -53,19 +53,6 @@ def _collect_bodies(payload):
         return "\n".join(parser.parts)
     return "(This email has no readable text body.)"
 
-
-def _redact_authentication_codes(text):
-    # Mask likely one-time authentication codes before displaying email text.
-    patterns = [
-        r"(?i)(\\b(?:verification|security|login|one[- ]time|authentication)\\s+code\\b\\s*[:：-]?\\s*)([A-Z0-9][A-Z0-9 -]{3,11})",
-        r"(?i)(\\bcode\\s*(?:is|:|：)\\s*)([A-Z0-9][A-Z0-9 -]{3,11})",
-        r"(?<!\\d)\\d{4,8}(?!\\d)",
-    ]
-    text = re.sub(patterns[0], r"\\1[REDACTED]", text)
-    text = re.sub(patterns[1], r"\\1[REDACTED]", text)
-    text = re.sub(patterns[2], "[REDACTED]", text)
-    return text.strip()
-
 def gmail_client():
     required = ["GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN"]
     missing = [name for name in required if not os.getenv(name)]
@@ -107,8 +94,7 @@ def search_latest_service_email(service_name: str, requested_address: str):
         sender_name, sender_email = parseaddr(headers.get("from", ""))
         internal_ms = int(msg.get("internalDate", "0"))
         received = datetime.fromtimestamp(internal_ms / 1000, tz=timezone.utc)
-        body = _redact_authentication_codes(
-            _collect_bodies(msg.get("payload", {}))
+        body = _collect_bodies(msg.get("payload", {}))
         )
         return {
             "id": msg["id"],
