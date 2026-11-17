@@ -7,8 +7,10 @@ from gmail_service import search_latest_service_email
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+
 def authorized(update: Update) -> bool:
     return bool(update.effective_user and is_authorized(update.effective_user.id))
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not authorized(update):
@@ -17,10 +19,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(name, callback_data=f"service:{name}")]
                 for name in SERVICE_DOMAINS]
     await update.message.reply_text(
-        "Choose a service first. Then send the email address to search for a matching "
-        "message in the connected Gmail inbox.",
+        "Choose a service first, then send the recipient email address to find its latest "
+        "matching message in the connected Gmail inbox.",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
 
 async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -31,8 +34,9 @@ async def service_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     service = query.data.split(":", 1)[1]
     context.user_data["selected_service"] = service
     await query.edit_message_text(
-        f"Selected: {service}\n\nNow send the email address to use as the recipient filter."
+        f"Selected: {service}\n\nNow send the recipient email address to search."
     )
+
 
 async def email_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not authorized(update):
@@ -54,19 +58,27 @@ async def email_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"No matching {service} email was found for {address} in the connected Gmail inbox."
             )
         else:
-            await update.message.reply_text(
-                f"Matching email found\n"
+            body = result["body"] or "(No readable message text.)"
+            if result["truncated"]:
+                body += "\n\n[Message shortened. Open Gmail to read the rest.]"
+            message = (
+                f"📩 Original email preview\n"
                 f"Service: {service}\n"
-                f"Recipient filter: {address}\n"
+                f"To: {address}\n"
                 f"From: {result['from']}\n"
                 f"Subject: {result['subject']}\n"
                 f"Received: {result['date']}\n\n"
-                "For security, this bot displays email metadata only; it does not extract or forward login codes."
+                f"{body}\n\n"
+                "Note: likely authentication codes are masked for account security."
             )
+            # Telegram message limit is 4096 characters; keep a safe margin.
+            await update.message.reply_text(message[:3900])
+            await update.message.reply_text(f"Open the original email in Gmail: {result['gmail_url']}")
     except Exception as exc:
         await update.message.reply_text(f"Could not search Gmail: {exc}")
     finally:
         context.user_data.pop("selected_service", None)
+
 
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -78,6 +90,7 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = int(context.args[0])
     add_admin_record(user_id, OWNER_ID)
     await update.message.reply_text(f"Admin added: {user_id}")
+
 
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -91,6 +104,7 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Admin removed: {context.args[0]}")
     except ValueError as exc:
         await update.message.reply_text(str(exc))
+
 
 async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
